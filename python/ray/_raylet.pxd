@@ -109,7 +109,8 @@ cdef class CoreWorker:
                             owner_address=*,
                             c_bool inline_small_object=*)
     cdef unique_ptr[CAddress] _convert_python_address(self, address=*)
-    cpdef add_object_ref_reference(self, ObjectRef object_ref)
+    cpdef add_object_ref_reference(self, ObjectRef object_ref,
+                                   const c_string &call_site)
     cdef deserialize_and_register_object_ref(
                 self, CObjectID object_id,
                 CObjectID outer_object_id,

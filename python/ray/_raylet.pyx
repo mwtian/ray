@@ -1661,7 +1661,8 @@ cdef class CoreWorker:
             actor_id.native(), &output, &c_actor_handle_id))
         return output, ObjectRef(c_actor_handle_id.Binary())
 
-    cpdef add_object_ref_reference(self, ObjectRef object_ref):
+    cpdef add_object_ref_reference(self, ObjectRef object_ref,
+                                   const c_string &call_site):
         # Note: faster to not release GIL for short-running op.
         CCoreWorkerProcess.GetCoreWorker().AddLocalReference(
             object_ref.native())

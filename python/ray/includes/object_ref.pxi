@@ -45,7 +45,7 @@ cdef class ObjectRef(BaseID):
         # But there are still some dummy object refs being created outside the
         # context of a core worker.
         if hasattr(worker, "core_worker"):
-            worker.core_worker.add_object_ref_reference(self)
+            worker.core_worker.add_object_ref_reference(self, call_site)
             self.in_core_worker = True
 
     def __dealloc__(self):
