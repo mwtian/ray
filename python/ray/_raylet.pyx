@@ -877,6 +877,7 @@ cdef void get_py_stack(c_string* stack_out) nogil:
             frame = frame.f_back
         stack_out[0] = " | ".join(msg_frames).encode("ascii")
 
+
 cdef shared_ptr[CBuffer] string_to_buffer(c_string& c_str):
     cdef shared_ptr[CBuffer] empty_metadata
     if c_str.size() == 0:
@@ -1603,8 +1604,7 @@ cdef class CoreWorker:
                                          worker.current_session_and_job)
 
     def deserialize_and_register_actor_handle(self, const c_string &bytes,
-                                              ObjectRef
-                                              outer_object_ref):
+                                              ObjectRef outer_object_ref):
         cdef:
             CObjectID c_outer_object_id = (outer_object_ref.native() if
                                            outer_object_ref else
@@ -1661,7 +1661,7 @@ cdef class CoreWorker:
             actor_id.native(), &output, &c_actor_handle_id))
         return output, ObjectRef(c_actor_handle_id.Binary())
 
-    def add_object_ref_reference(self, ObjectRef object_ref):
+    cpdef add_object_ref_reference(self, ObjectRef object_ref):
         # Note: faster to not release GIL for short-running op.
         CCoreWorkerProcess.GetCoreWorker().AddLocalReference(
             object_ref.native())
@@ -1687,25 +1687,21 @@ cdef class CoreWorker:
                 c_owner_address.SerializeAsString(),
                 serialized_object_status)
 
-    def deserialize_and_register_object_ref(
-            self, const c_string &object_ref_binary,
-            ObjectRef outer_object_ref,
+    cdef deserialize_and_register_object_ref(
+            self, CObjectID object_id,
+            CObjectID outer_object_id,
             const c_string &serialized_owner_address,
             const c_string &serialized_object_status,
     ):
         cdef:
-            CObjectID c_object_id = CObjectID.FromBinary(object_ref_binary)
-            CObjectID c_outer_object_id = (outer_object_ref.native() if
-                                           outer_object_ref else
-                                           CObjectID.Nil())
-            CAddress c_owner_address = CAddress()
+            CAddress owner_address = CAddress()
 
-        c_owner_address.ParseFromString(serialized_owner_address)
+        owner_address.ParseFromString(serialized_owner_address)
         (CCoreWorkerProcess.GetCoreWorker()
             .RegisterOwnershipInfoAndResolveFuture(
-                c_object_id,
-                c_outer_object_id,
-                c_owner_address,
+                object_id,
+                outer_object_id,
+                owner_address,
                 serialized_object_status))
 
     cdef store_task_outputs(
@@ -1950,3 +1946,43 @@ cdef void async_callback(shared_ptr[CRayObject] obj,
     py_callback = <object>user_callback
     py_callback(result)
     cpython.Py_DECREF(py_callback)
+
+# Context for deserializing object refs and actor handles contained in
+# another object.
+cdef class DeserializationInfo:
+    cdef:
+        public ObjectRef outer_object_ref
+        CObjectID outer_object_id
+        # Only set when needed, because it is expensive to compute.
+        c_string call_site
+
+    def __cinit__(self, ObjectRef object_ref):
+        self.outer_object_ref = object_ref
+        self.outer_object_id = object_ref.native() \
+            if object_ref else CObjectID.Nil()
+
+cpdef object_ref_deserializer(bytes binary, bytes owner_address,
+                              bytes object_status):
+    worker = ray.worker.global_worker
+    # info is None in the case that this ObjectRef was closed
+    # over in a function or pickled directly using pickle.dumps().
+    cdef DeserializationInfo info = worker.get_serialization_context() \
+                                          .get_deserialization_info()
+    if not info:
+        info = DeserializationInfo(None)
+    if info.call_site.empty():
+        get_py_stack(&info.call_site)
+
+    # NOTE(swang): Must deserialize the object first before asking
+    # the core worker to resolve the value. This is to make sure
+    # that the ref count for the ObjectRef is greater than 0 by the
+    # time the core worker resolves the value of the object.
+    cdef ObjectRef obj_ref = ray.ObjectRef(binary, info.call_site)
+
+    cdef CoreWorker core_worker = worker.core_worker
+    if owner_address:
+        core_worker.deserialize_and_register_object_ref(
+            obj_ref.native(), info.outer_object_id,
+            owner_address, object_status)
+
+    return obj_ref
