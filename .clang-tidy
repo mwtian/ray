@@ -1,6 +1,7 @@
-# Disable the following checks with reasons in parenthesis:
+ # Disable the following checks with reasons in parenthesis:
 #
 # -bugprone-macro-parentheses (inconsistent style)
+# -google-readability-casting (too noisy)
 # -google-readability-todo (potentially too restrictive)
 # -misc-non-private-member-variables-in-classes (potentially too restrictive)
 # -misc-unused-parameters (can be cleaned up in batch and enabled)
@@ -26,6 +27,7 @@ Checks: >
   bugprone-*,
   -bugprone-macro-parentheses,
   google-*,
+  -google-readability-casting,
   -google-readability-todo,
   misc-*,
   -misc-non-private-member-variables-in-classes,
@@ -41,9 +43,6 @@ Checks: >
   -modernize-avoid-bind,
   -modernize-loop-convert,
   -modernize-replace-disallow-copy-and-assign-macro,
-  -modernize-make-unique,
-  -modernize-make-shared,
-  -modernize-use-override,
   performance-*,
   readability-avoid-const-params-in-decls,
   readability-braces-around-statements,
