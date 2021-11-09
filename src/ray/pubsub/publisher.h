@@ -96,9 +96,11 @@ struct LongPollConnection {
 /// Abstraction to each subscriber.
 class Subscriber {
  public:
-  Subscriber(std::function<double()> get_time_ms, uint64_t connection_timeout_ms,
+  Subscriber(SubscriberID subscriber_id,
+             std::function<double()> get_time_ms, uint64_t connection_timeout_ms,
              const int publish_batch_size)
-      : get_time_ms_(std::move(get_time_ms)),
+      : subscriber_id_(subscriber_id),
+        get_time_ms_(std::move(get_time_ms)),
         connection_timeout_ms_(connection_timeout_ms),
         publish_batch_size_(publish_batch_size),
         last_connection_update_time_ms_(get_time_ms_()) {}
@@ -123,10 +125,11 @@ class Subscriber {
 
   /// Publish all queued messages if possible.
   ///
-  /// \param force If true, we publish to the subscriber although there's no queued
-  /// message.
+  /// \param force_noop If true, reply to the subscriber with an empty message, regardless
+  /// of whethere there is any queued message. This is for cases where the current poll
+  /// might have been cancelled, or the subscriber might be dead.
   /// \return True if it publishes. False otherwise.
-  bool PublishIfPossible(bool force = false);
+  bool PublishIfPossible(bool force_noop = false);
 
   /// Testing only. Return true if there's no metadata remained in the private attribute.
   bool CheckNoLeaks() const;
@@ -140,6 +143,8 @@ class Subscriber {
   bool IsActiveConnectionTimedOut() const;
 
  private:
+  /// Subscriber ID for logging and debugging.
+  const SubscriberID subscriber_id_;
   /// Cached long polling reply callback.
   /// It is cached whenever new long polling is coming from the subscriber.
   /// It becomes a nullptr whenever the long polling request is replied.
