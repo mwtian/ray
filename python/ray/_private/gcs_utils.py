@@ -280,6 +280,9 @@ class GcsSubscriber:
             if len(self._errors) == 0:
                 req = gcs_service_pb2.GcsSubscriberPollRequest(
                     subscriber_id=self._subscriber_id)
+                print(
+                    f"dbg {self._subscriber_id.hex()} poll_error started polling errors"
+                )
                 fut = self._stub.GcsSubscriberPoll.future(req, timeout=timeout)
                 # Wait for result to become available, or cancel if the
                 # subscriber has closed.
@@ -298,7 +301,11 @@ class GcsSubscriber:
                     except Exception:
                         # GRPC error, including deadline exceeded.
                         raise
+                print(f"dbg {self._subscriber_id.hex()} poll_error finished")
                 if fut.done():
+                    print(
+                        f"dbg {self._subscriber_id.hex()} poll_error done {fut.result()}"
+                    )
                     for msg in fut.result().pub_messages:
                         self._errors.append((msg.key_id,
                                              msg.error_info_message))

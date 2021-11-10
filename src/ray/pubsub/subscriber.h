@@ -45,11 +45,11 @@ using SubscriptionFailureCallback =
 
 /// Subscription info stores metadata that is needed for subscriptions.
 struct SubscriptionInfo {
-  // Subscription for all entities.
+  // Subscriptions for all entities.
   std::unique_ptr<std::pair<SubscriptionItemCallback, SubscriptionFailureCallback>>
       all_entities_subscription;
 
-  // Subscription for all entities.
+  // Subscriptions for each entity.
   absl::flat_hash_map<std::string,
                       std::pair<SubscriptionItemCallback, SubscriptionFailureCallback>>
       per_entity_subscription;
@@ -179,6 +179,8 @@ class SubscriberChannel {
 
   const rpc::ChannelType channel_type_;
 
+
+    int64_t processed_seq_ = -1;
   /// Mapping of the publisher ID -> subscription info.
   absl::flat_hash_map<PublisherID, SubscriptionInfo> subscription_map_;
 

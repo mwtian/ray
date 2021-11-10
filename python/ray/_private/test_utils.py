@@ -518,14 +518,26 @@ def get_error_message(subscriber, num, error_type=None, timeout=20):
     while time.time() < deadline and len(msgs) < num:
         if isinstance(subscriber, gcs_utils.GcsSubscriber):
             try:
+                print(
+                    f"dbg {subscriber._subscriber_id.hex()} get_error_message started polling",
+                    flush=True)
                 _, error_data = subscriber.poll_error(timeout=deadline -
                                                       time.time())
+                print(
+                    f"dbg {subscriber._subscriber_id.hex()} get_error_message finished polling",
+                    flush=True)
             except grpc.RpcError as e:
                 # Failed to match error message before timeout.
                 if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                     logging.warning("get_error_message() timed out")
+                    print(
+                        f"dbg {subscriber._subscriber_id.hex()} get_error_message timed out"
+                    )
                     return []
                 # Otherwise, the error is unexpected.
+                print(
+                    f"dbg {subscriber._subscriber_id.hex()} get_error_message exception {e}",
+                    flush=True)
                 raise
         else:
             msg = subscriber.get_message()
@@ -534,6 +546,7 @@ def get_error_message(subscriber, num, error_type=None, timeout=20):
                 continue
             pubsub_msg = gcs_utils.PubSubMessage.FromString(msg["data"])
             error_data = gcs_utils.ErrorTableData.FromString(pubsub_msg.data)
+        print(f"dbg get_error_message {error_type} {error_data}", flush=True)
         if error_type is None or error_type == error_data.type:
             msgs.append(error_data)
         else:

@@ -143,8 +143,16 @@ bool SubscriptionIndex::CheckNoLeaks() const {
   return key_id_to_subscribers_.size() == 0 && subscribers_to_key_id_.size() == 0;
 }
 
-bool Subscriber::ConnectToSubscriber(rpc::PubsubLongPollingReply *reply,
-                                     rpc::SendReplyCallback send_reply_callback) {
+bool SubscriberState::ConnectToSubscriber(const rpc::PubsubLongPollingRequest &request,
+                                          rpc::PubsubLongPollingReply *reply,
+                                          rpc::SendReplyCallback send_reply_callback) {
+  RAY_LOG(ERROR) << "dbg " << subscriber_id_.Hex()
+                 << " SubscriberState::ConnectToSubscriber long_polling_connection_="
+                 << long_polling_connection_.get();
+  // Cleanup messages already processed by the subscriber.
+  while (!mailbox_.empty() && mailbox_.front()->seq() <= request.processed_seq()) {
+    mailbox_.pop();
+  }
   if (long_polling_connection_) {
     // Flush the current subscriber poll with an empty reply.
     PublishIfPossible(/*force_noop=*/true);
@@ -160,9 +168,11 @@ bool Subscriber::ConnectToSubscriber(rpc::PubsubLongPollingReply *reply,
   return false;
 }
 
-void Subscriber::QueueMessage(const rpc::PubMessage &pub_message, bool try_publish) {
+void SubscriberState::QueueMessage(const rpc::PubMessage &pub_message, bool try_publish) {
   if (mailbox_.empty() || mailbox_.back()->pub_messages_size() >= publish_batch_size_) {
     mailbox_.push(absl::make_unique<rpc::PubsubLongPollingReply>());
+    // Assign a new sequence number to the queued poll reply.
+    mailbox_.back()->set_seq(next_seq_++);
   }
 
   // Update the long polling reply.
@@ -175,7 +185,11 @@ void Subscriber::QueueMessage(const rpc::PubMessage &pub_message, bool try_publi
   }
 }
 
-bool Subscriber::PublishIfPossible(bool force_noop) {
+bool SubscriberState::PublishIfPossible(bool force_noop) {
+  RAY_LOG(ERROR) << "dbg " << subscriber_id_.Hex()
+                 << " SubscriberState::PublishIfPossible long_polling_connection_="
+                 << long_polling_connection_.get() << " force_noop=" << force_noop
+                 << " mailbox_.size()=" << mailbox_.size();
   if (!long_polling_connection_) {
     return false;
   }
@@ -184,8 +198,9 @@ bool Subscriber::PublishIfPossible(bool force_noop) {
   }
 
   if (!force_noop) {
-    // Reply to the long polling subscriber. Swap the reply here to avoid extra copy.
-    long_polling_connection_->reply->Swap(mailbox_.front().get());
+    // Reply to the long polling subscriber. Reply will be deleted later, after being
+    // acknowledged.
+    long_polling_connection_->reply->CopyFrom(*mailbox_.front());
     mailbox_.pop();
   }
   long_polling_connection_->send_reply_callback(Status::OK(), nullptr, nullptr);
@@ -196,43 +211,47 @@ bool Subscriber::PublishIfPossible(bool force_noop) {
   return true;
 }
 
-bool Subscriber::CheckNoLeaks() const {
+bool SubscriberState::CheckNoLeaks() const {
   return !long_polling_connection_ && mailbox_.size() == 0;
 }
 
-bool Subscriber::IsDisconnected() const {
+bool SubscriberState::IsDisconnected() const {
   return !long_polling_connection_ &&
          get_time_ms_() - last_connection_update_time_ms_ >= connection_timeout_ms_;
 }
 
-bool Subscriber::IsActiveConnectionTimedOut() const {
+bool SubscriberState::IsActiveConnectionTimedOut() const {
   return long_polling_connection_ &&
          get_time_ms_() - last_connection_update_time_ms_ >= connection_timeout_ms_;
 }
 
 }  // namespace pub_internal
 
-void Publisher::ConnectToSubscriber(const SubscriberID &subscriber_id,
+void Publisher::ConnectToSubscriber(const rpc::PubsubLongPollingRequest &request,
                                     rpc::PubsubLongPollingReply *reply,
                                     rpc::SendReplyCallback send_reply_callback) {
   RAY_CHECK(reply != nullptr);
   RAY_CHECK(send_reply_callback != nullptr);
-  RAY_LOG(DEBUG) << "Long polling connection initiated by " << subscriber_id;
 
+  const auto subscriber_id = SubscriberID::FromBinary(request.subscriber_id());
+  RAY_LOG(DEBUG) << "Long polling connection initiated by " << subscriber_id.Hex();
   absl::MutexLock lock(&mutex_);
   auto it = subscribers_.find(subscriber_id);
   if (it == subscribers_.end()) {
     it = subscribers_
-             .emplace(subscriber_id,
-                      std::make_shared<pub_internal::Subscriber>(
-                          get_time_ms_, subscriber_timeout_ms_, publish_batch_size_))
+             .emplace(subscriber_id, std::make_shared<pub_internal::SubscriberState>(
+                                         subscriber_id, get_time_ms_,
+                                         subscriber_timeout_ms_, publish_batch_size_))
              .first;
+    // Subscription is created along with this poll request. So this is either a new
+    // subscription or a reconnection. Ask the subscriber to reset their sequence number.
+    reply->set_reset_seq(true);
   }
   auto &subscriber = it->second;
 
   // Since the long polling connection is synchronous between the client and
   // coordinator, when it connects, the connection shouldn't have existed.
-  RAY_CHECK(subscriber->ConnectToSubscriber(reply, std::move(send_reply_callback)));
+  RAY_CHECK(subscriber->ConnectToSubscriber(request, reply, std::move(send_reply_callback)));
   subscriber->PublishIfPossible();
 }
 
@@ -241,9 +260,9 @@ bool Publisher::RegisterSubscription(const rpc::ChannelType channel_type,
                                      const std::optional<std::string> &key_id) {
   absl::MutexLock lock(&mutex_);
   if (!subscribers_.contains(subscriber_id)) {
-    subscribers_.emplace(subscriber_id,
-                         std::make_shared<pub_internal::Subscriber>(
-                             get_time_ms_, subscriber_timeout_ms_, publish_batch_size_));
+    subscribers_.emplace(subscriber_id, std::make_shared<pub_internal::SubscriberState>(
+                                            subscriber_id, get_time_ms_,
+                                            subscriber_timeout_ms_, publish_batch_size_));
   }
   auto subscription_index_it = subscription_index_map_.find(channel_type);
   RAY_CHECK(subscription_index_it != subscription_index_map_.end());
@@ -266,6 +285,8 @@ void Publisher::Publish(const rpc::PubMessage &pub_message) {
   cum_pub_message_cnt_[channel_type]++;
 
   for (const auto &subscriber_id : maybe_subscribers.value().get()) {
+    RAY_LOG(ERROR) << "dbg Publisher::Publish subscriber_id=" << subscriber_id.Hex()
+                   << " msg=" << pub_message.ShortDebugString();
     auto it = subscribers_.find(subscriber_id);
     RAY_CHECK(it != subscribers_.end());
     auto &subscriber = it->second;

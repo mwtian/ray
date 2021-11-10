@@ -302,6 +302,7 @@ Status GcsPublisher::PublishTaskLease(const TaskID &id, const rpc::TaskLeaseData
 Status GcsPublisher::PublishError(const std::string &id,
                                   const rpc::ErrorTableData &message,
                                   const StatusCallback &done) {
+  RAY_LOG(ERROR) << "dbg PublishError " << id << " " << message.ShortDebugString();
   if (publisher_ != nullptr) {
     rpc::PubMessage msg;
     msg.set_channel_type(rpc::ChannelType::RAY_ERROR_INFO_CHANNEL);
