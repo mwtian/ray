@@ -216,13 +216,10 @@
 
   run:
     timeout: 86400
-    prepare: $(while pkill -9 raylet; do sleep 1; done)
+    prepare: ray stop && while pkill -9 'ray|gcs|python'; do sleep 1; done
     script: python workloads/serve_failure.py
     long_running: True
 
   smoke_test:
     run:
       timeout: 3600
-
-  app_env_vars:
-    CLUSTER_ADDRESS: "127.0.0.1:6379"
