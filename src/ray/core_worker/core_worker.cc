@@ -108,6 +108,7 @@ CoreWorker::CoreWorker(const CoreWorkerOptions &options, const WorkerID &worker_
       worker_context_(options_.worker_type, worker_id, GetProcessJobID(options_)),
       io_work_(io_service_),
       client_call_manager_(new rpc::ClientCallManager(io_service_)),
+      background_work_(background_service_),
       periodical_runner_(io_service_),
       task_queue_length_(0),
       num_executed_tasks_(0),
@@ -455,6 +456,8 @@ CoreWorker::CoreWorker(const CoreWorkerOptions &options, const WorkerID &worker_
   // Start the IO thread after all other members have been initialized, in case
   // the thread calls back into any of our members.
   io_thread_ = std::thread([this]() { RunIOService(); });
+  // Start background thread to start periodic runners and other background work.
+  background_thread_ = std::thread([this]() { RunBackgroundService(); });
   // Tell the raylet the port that we are listening on.
   // NOTE: This also marks the worker as available in Raylet. We do this at the
   // very end in case there is a problem during construction.
@@ -540,10 +543,17 @@ void CoreWorker::Shutdown() {
     gcs_client_->Disconnect();
   }
   io_service_.stop();
-  RAY_LOG(INFO) << "Waiting for joining a core worker io thread. If it hangs here, there "
+  background_service_.stop();
+  RAY_LOG(INFO) << "Waiting for joining core worker io thread. If it hangs here, there "
                    "might be deadlock or a high load in the core worker io service.";
   if (io_thread_.joinable()) {
     io_thread_.join();
+  }
+  RAY_LOG(INFO) << "Waiting for joining core worker background thread. If it hangs here, "
+                   "there might be deadlock or a high load in the core worker background "
+                   "service.";
+  if (background_thread_.joinable()) {
+    background_thread_.join();
   }
   // Now that gcs_client is not used within io service, we can reset the pointer and clean
   // it up.
@@ -650,6 +660,7 @@ void CoreWorker::Exit(
 
   task_manager_->DrainAndShutdown(drain_references_callback);
 }
+
 void CoreWorker::RunIOService() {
 #ifndef _WIN32
   // Block SIGINT and SIGTERM so they will be handled by the main thread.
@@ -662,6 +673,20 @@ void CoreWorker::RunIOService() {
   SetThreadName("worker.io");
   io_service_.run();
   RAY_LOG(INFO) << "Core worker main io service stopped.";
+}
+
+void CoreWorker::RunBackgroundService() {
+#ifndef _WIN32
+  // Block SIGINT and SIGTERM so they will be handled by the main thread.
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  pthread_sigmask(SIG_BLOCK, &mask, NULL);
+#endif
+  SetThreadName("worker.background");
+  background_service_.run();
+  RAY_LOG(INFO) << "Core worker background service stopped.";
 }
 
 void CoreWorker::OnNodeRemoved(const NodeID &node_id) {
@@ -2960,12 +2985,14 @@ void CoreWorker::HandleLocalGC(const rpc::LocalGCRequest &request,
   RAY_LOG(INFO) << "dbg LocalGC py-spy non-blocking:\n" << RunPySpy(nonblocking_cmd);
   RAY_LOG(INFO) << "dbg LocalGC py-spy native:\n" << RunPySpy(native_cmd);
   if (options_.gc_collect != nullptr) {
-    const auto start = absl::Now();
-    options_.gc_collect();
-    const auto end = absl::Now();
-    if (end - start > absl::Seconds(10)) {
-      RAY_LOG(WARNING) << "dbg LocalGC taking too long: " << end - start;
-    }
+//    background_service_.post([gc_collect = options_.gc_collect]() {
+//      const auto start = absl::Now();
+//      gc_collect();
+//      const auto end = absl::Now();
+//      if (end - start > absl::Seconds(10)) {
+//        RAY_LOG(WARNING) << "dbg LocalGC taking too long: " << end - start;
+//      }
+//    }, "CoreWorker.Background.LocalGC");
     send_reply_callback(Status::OK(), nullptr, nullptr);
   } else {
     send_reply_callback(Status::NotImplemented("GC callback not defined"), nullptr,
