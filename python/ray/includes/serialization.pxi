@@ -375,14 +375,15 @@ cdef class Pickle5Writer:
         for i in range(self.python_object.buffer_size()):
             buffer_addr = self.python_object.buffer(i).address()
             buffer_len = self.python_object.buffer(i).length()
-            if (memcopy_threads > 1 and
-                    buffer_len > kMemcopyDefaultThreshold):
-                parallel_memcopy(ptr + buffer_addr,
-                                 <const uint8_t*> self.buffers[i].buf,
-                                 buffer_len,
-                                 kMemcopyDefaultBlocksize, memcopy_threads)
-            else:
-                memcpy(ptr + buffer_addr, self.buffers[i].buf, buffer_len)
+            with nogil:
+                if (memcopy_threads > 1 and
+                        buffer_len > kMemcopyDefaultThreshold):
+                    parallel_memcopy(ptr + buffer_addr,
+                                     <const uint8_t*> self.buffers[i].buf,
+                                     buffer_len,
+                                     kMemcopyDefaultBlocksize, memcopy_threads)
+                else:
+                    memcpy(ptr + buffer_addr, self.buffers[i].buf, buffer_len)
 
 
 cdef class SerializedObject(object):
@@ -487,9 +488,10 @@ cdef class MessagePackSerializedObject(SerializedObject):
         cdef uint8_t *ptr = &buffer[0]
 
         # Write msgpack data first.
-        memcpy(ptr, self.msgpack_header_ptr, self._msgpack_header_bytes)
-        memcpy(ptr + kMessagePackOffset,
-               self.msgpack_data_ptr, self._msgpack_data_bytes)
+        with nogil:
+            memcpy(ptr, self.msgpack_header_ptr, self._msgpack_header_bytes)
+            memcpy(ptr + kMessagePackOffset,
+                   self.msgpack_data_ptr, self._msgpack_data_bytes)
 
         if self.nest_serialized_object is not None:
             self.nest_serialized_object.write_to(
@@ -516,11 +518,12 @@ cdef class RawSerializedObject(SerializedObject):
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void write_to(self, uint8_t[:] buffer) nogil:
-        if (MEMCOPY_THREADS > 1 and
-                self._total_bytes > kMemcopyDefaultThreshold):
-            parallel_memcopy(&buffer[0],
-                             self.value_ptr,
-                             self._total_bytes, kMemcopyDefaultBlocksize,
-                             MEMCOPY_THREADS)
-        else:
-            memcpy(&buffer[0], self.value_ptr, self._total_bytes)
+        with nogil:
+            if (MEMCOPY_THREADS > 1 and
+                    self._total_bytes > kMemcopyDefaultThreshold):
+                parallel_memcopy(&buffer[0],
+                                 self.value_ptr,
+                                 self._total_bytes, kMemcopyDefaultBlocksize,
+                                 MEMCOPY_THREADS)
+            else:
+                memcpy(&buffer[0], self.value_ptr, self._total_bytes)

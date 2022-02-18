@@ -2985,14 +2985,14 @@ void CoreWorker::HandleLocalGC(const rpc::LocalGCRequest &request,
   RAY_LOG(INFO) << "dbg LocalGC py-spy non-blocking:\n" << RunPySpy(nonblocking_cmd);
   RAY_LOG(INFO) << "dbg LocalGC py-spy native:\n" << RunPySpy(native_cmd);
   if (options_.gc_collect != nullptr) {
-//    background_service_.post([gc_collect = options_.gc_collect]() {
-//      const auto start = absl::Now();
-//      gc_collect();
-//      const auto end = absl::Now();
-//      if (end - start > absl::Seconds(10)) {
-//        RAY_LOG(WARNING) << "dbg LocalGC taking too long: " << end - start;
-//      }
-//    }, "CoreWorker.Background.LocalGC");
+    //    background_service_.post([gc_collect = options_.gc_collect]() {
+    //      const auto start = absl::Now();
+    //      gc_collect();
+    //      const auto end = absl::Now();
+    //      if (end - start > absl::Seconds(10)) {
+    //        RAY_LOG(WARNING) << "dbg LocalGC taking too long: " << end - start;
+    //      }
+    //    }, "CoreWorker.Background.LocalGC");
     send_reply_callback(Status::OK(), nullptr, nullptr);
   } else {
     send_reply_callback(Status::NotImplemented("GC callback not defined"), nullptr,
