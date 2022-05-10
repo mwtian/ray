@@ -85,11 +85,12 @@ void GcsActorScheduler::ScheduleByGcs(std::shared_ptr<GcsActor> actor) {
   };
 
   // Queue and schedule the actor locally (gcs).
-  cluster_task_manager_->QueueAndScheduleTask(actor->GetCreationTaskSpecification(),
-                                              /*grant_or_reject*/ false,
-                                              /*is_selected_based_on_locality*/ false,
-                                              /*reply*/ reply.get(),
-                                              send_reply_callback);
+  cluster_task_manager_->QueueAndScheduleTask(
+      RayTask(actor->GetCreationTaskSpecification()),
+      /*grant_or_reject*/ false,
+      /*is_selected_based_on_locality*/ false,
+      /*reply*/ reply.get(),
+      send_reply_callback);
 }
 
 void GcsActorScheduler::ScheduleByRaylet(std::shared_ptr<GcsActor> actor) {

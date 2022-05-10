@@ -18,21 +18,11 @@
 
 namespace ray {
 
-RayTask::RayTask(const rpc::Task &message) : task_spec_(message.task_spec()) {
-  ComputeDependencies();
-}
+RayTask::RayTask(const rpc::Task &message) : task_spec_(message.task_spec()) {}
 
-RayTask::RayTask(TaskSpecification task_spec) : task_spec_(std::move(task_spec)) {
-  ComputeDependencies();
-}
+RayTask::RayTask(TaskSpecification task_spec) : task_spec_(std::move(task_spec)) {}
 
 const TaskSpecification &RayTask::GetTaskSpecification() const { return task_spec_; }
-
-const std::vector<rpc::ObjectReference> &RayTask::GetDependencies() const {
-  return dependencies_;
-}
-
-void RayTask::ComputeDependencies() { dependencies_ = task_spec_.GetDependencies(); }
 
 std::string RayTask::DebugString() const {
   std::ostringstream stream;

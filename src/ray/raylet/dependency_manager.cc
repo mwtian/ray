@@ -172,7 +172,13 @@ bool DependencyManager::RequestTaskDependencies(
                  << ". Required objects length: " << required_objects.size();
 
   const auto required_ids = ObjectRefsToIds(required_objects);
-  absl::flat_hash_set<ObjectID> deduped_ids(required_ids.begin(), required_ids.end());
+  std::vector<ObjectID> deduped_ids;
+  {
+    absl::flat_hash_set<ObjectID> deduped_ids_set(required_ids.begin(),
+                                                  required_ids.end());
+    deduped_ids.reserve(deduped_ids_set.size());
+    deduped_ids.insert(deduped_ids.end(), deduped_ids_set.begin(), deduped_ids_set.end());
+  }
   auto inserted = queued_task_requests_.emplace(task_id, std::move(deduped_ids));
   RAY_CHECK(inserted.second) << "Task depedencies can be requested only once per task. "
                              << task_id;

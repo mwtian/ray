@@ -191,13 +191,12 @@ class DependencyManager : public TaskDependencyManagerInterface {
 
   /// A struct to represent the object dependencies of a task.
   struct TaskDependencies {
-    TaskDependencies(const absl::flat_hash_set<ObjectID> &deps)
+    TaskDependencies(std::vector<ObjectID> deps)
         : dependencies(std::move(deps)), num_missing_dependencies(dependencies.size()) {}
     /// The objects that the task depends on. These are the arguments to the
     /// task. These must all be simultaneously local before the task is ready
-    /// to execute. Objects are removed from this set once
-    /// UnsubscribeGetDependencies is called.
-    absl::flat_hash_set<ObjectID> dependencies;
+    /// to execute.
+    const std::vector<ObjectID> dependencies;
     /// The number of object arguments that are not available locally. This
     /// must be zero before the task is ready to execute.
     size_t num_missing_dependencies;

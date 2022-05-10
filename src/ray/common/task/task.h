@@ -41,18 +41,12 @@ class RayTask {
   explicit RayTask(const rpc::Task &message);
 
   /// Construct a `RayTask` object from a `TaskSpecification`.
-  RayTask(TaskSpecification task_spec);
+  explicit RayTask(TaskSpecification task_spec);
 
   /// Get the immutable specification for the task.
   ///
   /// \return The immutable specification for the task.
   const TaskSpecification &GetTaskSpecification() const;
-
-  /// Get the task's object dependencies. This comprises the immutable task
-  /// arguments and the mutable execution dependencies.
-  ///
-  /// \return The object dependencies.
-  const std::vector<rpc::ObjectReference> &GetDependencies() const;
 
   std::string DebugString() const;
 
@@ -63,9 +57,6 @@ class RayTask {
   /// task determined at submission time. Includes resource demand, object
   /// dependencies, etc.
   TaskSpecification task_spec_;
-  /// A cached copy of the task's object dependencies, including arguments from
-  /// the TaskSpecification.
-  std::vector<rpc::ObjectReference> dependencies_;
 };
 
 }  // namespace ray
